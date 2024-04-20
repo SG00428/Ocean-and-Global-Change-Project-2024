@@ -1,0 +1,42 @@
+// DEM
+// Load SRTM 90m data
+var iitgn = ee.Image("USGS/SRTMGL1_003").clip(geometry); // Clip using basin shapefile
+var exaggeration = 10;
+var hillshade = ee.Terrain.hillshade(iitgn.multiply(exaggeration));
+Map.addLayer(hillshade, null, 'IITGN Hillshade');
+Map.addLayer(iitgn, {min: 50, max: 90, palette: ['27ebcb','B4F5B0','FAFCB2','B1DB70','0A8040','9EA52A','FBBA04','6B2B0B','FFFFFF']},'DEM',1,1);
+
+// satellite data
+var dataset = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+    .filter(ee.Filter.lt('CLOUD_COVER',20))
+    .filterDate('2022-11-01', '2022-11-30')
+    .filterBounds(geometry);
+
+print(dataset.size())
+// Applies scaling factors.
+function applyScaleFactors(image) {
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+  var thermalBands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+  return image.addBands(opticalBands, null, true)
+              .addBands(thermalBands, null, true);
+}
+
+dataset = dataset.map(applyScaleFactors);
+
+function addwatermask(image) {
+  var mndwi = image.normalizedDifference(['SR_B3', 'SR_B5']).rename('MNDWI'); 
+  var watermask = mndwi.gt(0).selfMask().rename('watermask');
+  return image.addBands(watermask);
+}
+
+dataset = dataset.map(addwatermask);
+
+var visualization = {
+  bands: ['SR_B5', 'SR_B4', 'SR_B3'],
+  min: 0.0,
+  max: 0.4,
+};
+
+Map.setCenter(72.68, 23.22, 12);
+Map.addLayer(dataset.mean().clip(geometry), visualization, 'True Color (432)');
+Map.addLayer(dataset.select('watermask').mean().clip(geometry), {palette: '0000FF'}, 'Water Mask');
